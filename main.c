@@ -5,6 +5,7 @@
 #include "basic_io.h"
 #include "queue.h"
 #include "ProjectShared.h"
+#include "HMI.h"
 
 QueueHandle_t xInputQueue;  // from input task to safty task and gate control 
 QueueHandle_t xGateQueue;   // from safty task to Gate control task
@@ -68,35 +69,39 @@ static void vStatusTask(void *pvParameters)
             {
                 case IDLE_OPEN:
 											vPrintString("Status: IDLE_OPEN\r\n");
-											// Green_On();
-											// Red_Off();
+								      LED_AllOff();
+											LED_Set(GREEN,ON);
                     break;
 
                 case IDLE_CLOSED:
                     vPrintString("Status: IDLE_CLOSED\r\n");
-								    //Red_On();
-								    //Greem_Off();
+								    LED_AllOff();
+								    LED_Set(RED,ON);
+								   
                     break;
 
                 case OPENING:
                     vPrintString("Status: OPENING\r\n");
-								    //Green_Toggle();
+								    LED_AllOff();
+								    LED_Set(GREEN,TOGGLE);
                     break;
 
                 case CLOSING:
                     vPrintString("Status: CLOSING\r\n");
-								    //Red_Toggle();
+								    LED_AllOff();
+								    LED_Set(RED,TOGGLE);
                     break;
 
                 case STOPPED_MIDWAY:
                     vPrintString("Status: STOPPED_MIDWAY\r\n");
-								      //Green_Off();
-                      //Red_Off();
+								    LED_AllOff();
+								    LED_Set(BLUE,ON);
                     break;
 
                 case REVERSING:
                     vPrintString("Status: REVERSING\r\n");
-								    //Green_Toggle();
+								    LED_AllOff();
+								    LED_Set(GREEN,TOGGLE);
                     break;
             }
         }
@@ -106,6 +111,10 @@ static void vStatusTask(void *pvParameters)
 }
 int main(void)
 {
+	Buttons_Init();
+	LED_Init();
+	
+	
   xInputQueue = xQueueCreate(10, sizeof(InputData_t));
 	xGateQueue = xQueueCreate(10, sizeof(GateEvent_t));
 	xGateStateMutex = xSemaphoreCreateMutex();	

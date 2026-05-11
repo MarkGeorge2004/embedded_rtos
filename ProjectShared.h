@@ -53,8 +53,13 @@ typedef struct {
 extern QueueHandle_t xInputQueue;
 extern QueueHandle_t xGateQueue;
 extern SemaphoreHandle_t xGateStateMutex;
+extern SemaphoreHandle_t xInputStateMutex;
+extern SemaphoreHandle_t xOpenLimitSemaphore;
+extern SemaphoreHandle_t xClosedLimitSemaphore;
+
 
 extern volatile GateState_t g_gateState;
 extern volatile GateMode_t g_gateMode;
+extern volatile InputData_t g_latestInput;
 
 #endif

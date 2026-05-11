@@ -2,7 +2,6 @@
 #include "HMI.h"
 
 
-
 void LED_Init(void) {
     SYSCTL_RCGCGPIO_R |= 0x20;
     while ((SYSCTL_PRGPIO_R & 0x20) == 0) {}
@@ -31,9 +30,22 @@ void Buttons_Init(void){
 		
 }
 
-void LED_Set(uint8_t led, bool on) {
-    if (on) GPIO_PORTF_DATA_R |= led;
-    else GPIO_PORTF_DATA_R &= ~led;
+void LED_Set(uint8_t led, LED_Action_t action)
+{
+    switch(action)
+    {
+        case ON:
+            GPIO_PORTF_DATA_R |= led;
+            break;
+
+        case OFF:
+            GPIO_PORTF_DATA_R &= ~led;
+            break;
+
+        case TOGGLE:
+            GPIO_PORTF_DATA_R ^= led;
+            break;
+    }
 }
 
 void LED_AllOff(void) {

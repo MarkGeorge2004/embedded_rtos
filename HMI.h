@@ -22,11 +22,15 @@
 
 #define ALL_INPUT_PINS          0x7FU   // PB0 to PB6
 
-
+typedef enum{
+    OFF,
+    ON,
+    TOGGLE
+}LED_Action_t;
 
 
 extern void LED_Init(void);
-extern void LED_Set(uint8_t led, bool on);
+extern void LED_Set(uint8_t led, LED_Action_t action);
 extern void LED_AllOff(void);
 
 extern void Buttons_Init(void);
