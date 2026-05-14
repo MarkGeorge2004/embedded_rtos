@@ -60,7 +60,7 @@ void vInputTask(void *pvParameters)
         {
             xQueueSendToBack(xInputQueue, &Input, portMAX_DELAY);
         }
-        vTaskDelay(pdMS_TO_TICKS(100)); // Adjust delay as needed to balance responsiveness and CPU usage
+        vTaskDelay(pdMS_TO_TICKS(200)); // Adjust delay as needed to balance responsiveness and CPU usage
     }
 }
 
@@ -112,6 +112,11 @@ void vGateTask(void *pvParameters)
             {
                 changeGateState_and_Mode(STOPPED_MIDWAY, MODE_AUTO);
             }
+            else if (Input.securityClose && (!Input.securityOpen))
+            {
+                changeGateState_and_Mode(CLOSING, MODE_AUTO);
+                vTaskDelay(pdMS_TO_TICKS(200));
+            }
             else if (currentMode == MODE_AUTO && CheckOpenButtons(Input))
             {
                 changeGateState_and_Mode(OPENING, MODE_MANUAL);
@@ -132,6 +137,11 @@ void vGateTask(void *pvParameters)
             else if (CheckClashingButtons(Input))
             {
                 changeGateState_and_Mode(STOPPED_MIDWAY, MODE_AUTO);
+            }
+            else if (Input.securityOpen && (!Input.securityClose))
+            {
+                changeGateState_and_Mode(OPENING, MODE_AUTO);
+                vTaskDelay(pdMS_TO_TICKS(200));
             }
             else if (currentMode == MODE_AUTO && CheckCloseButtons(Input))
             {
@@ -181,7 +191,7 @@ void vSafetyTask(void *pvParameters)
 
         xSemaphoreGive(xGateStateMutex);
 
-        if (currentState == CLOSING && currentMode == MODE_AUTO)
+        if (currentState == CLOSING)
         {
             // sent to the Gate_ControlTask
             changeGateState_and_Mode(REVERSING, MODE_AUTO);
@@ -225,12 +235,11 @@ void vLEDTask(void *pvParameters)
 
         case REVERSING:
             LED_AllOff();
-            LED_Set(GREEN, TOGGLE);
+            LED_Set(GREEN, ON);
             break;
         }
+        vTaskDelay(pdMS_TO_TICKS(250));
     }
-
-    vTaskDelay(pdMS_TO_TICKS(250));
 }
 
 void vStatusTask(void *pvParameters)
@@ -289,8 +298,9 @@ int main(void)
     xObstacleSemaphore = xSemaphoreCreateBinary();
 
     xTaskCreate(vSafetyTask, "Safety Task", 128, NULL, 4, NULL);
-    xTaskCreate(vGateTask, "Gate Task", 512, NULL, 3, NULL);
-    xTaskCreate(vLEDTask, "LED Task", 128, NULL, 3, NULL);
+    xTaskCreate(vInputTask, "Input Task", 128, NULL, 3, NULL);
+    xTaskCreate(vGateTask, "Gate Task", 512, NULL, 2, NULL);
+    xTaskCreate(vLEDTask, "LED Task", 128, NULL, 2, NULL);
     xTaskCreate(vStatusTask, "Status Task", 128, NULL, 1, NULL);
 
     vTaskStartScheduler();
