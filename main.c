@@ -12,6 +12,8 @@
 QueueHandle_t xInputQueue; // from input task to safty task and gate control
 SemaphoreHandle_t xGateStateMutex;
 SemaphoreHandle_t xObstacleSemaphore;
+SemaphoreHandle_t xOpenLimitSemaphore;
+SemaphoreHandle_t xCloseLimitSemaphore;
 
 // steady state of the gate
 volatile GateState_t g_gateState = IDLE_CLOSED;
@@ -44,6 +46,29 @@ bool CheckClashingButtons(InputData_t Input)
     return ((Input.driverClose && Input.driverOpen) || (Input.securityOpen && Input.securityClose));
 }
 
+void GPIOB_Handler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (GPIO_PORTB_RIS_R & OBSTACLE_BTN)
+    {
+        GPIO_PORTB_ICR_R = OBSTACLE_BTN;
+        xSemaphoreGiveFromISR(xObstacleSemaphore, &xHigherPriorityTaskWoken);
+    }
+    if (GPIO_PORTB_RIS_R & OPEN_LIMIT_BTN)
+
+    {
+        GPIO_PORTB_ICR_R = OPEN_LIMIT_BTN;
+        xSemaphoreGiveFromISR(xOpenLimitSemaphore, &xHigherPriorityTaskWoken);
+    }
+    if (GPIO_PORTB_RIS_R & CLOSED_LIMIT_BTN)
+    {
+        GPIO_PORTB_ICR_R = CLOSED_LIMIT_BTN;
+        xSemaphoreGiveFromISR(xCloseLimitSemaphore, &xHigherPriorityTaskWoken);
+    }
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
 void vInputTask(void *pvParameters)
 {
     InputData_t Input;
@@ -52,15 +77,9 @@ void vInputTask(void *pvParameters)
     {
         Input = Buttons_Read();
         // Process input data if needed (currently just forwarding to safety task)
-        if (Input.obstacle == 1)
-        {
-            xSemaphoreGive(xObstacleSemaphore);
-        }
-        else
-        {
-            xQueueSendToBack(xInputQueue, &Input, portMAX_DELAY);
-        }
-        vTaskDelay(pdMS_TO_TICKS(200)); // Adjust delay as needed to balance responsiveness and CPU usage
+
+        xQueueSendToBack(xInputQueue, &Input, portMAX_DELAY);
+        vTaskDelay(pdMS_TO_TICKS(100)); // Adjust delay as needed to balance responsiveness and CPU usage
     }
 }
 
@@ -89,7 +108,7 @@ void vGateTask(void *pvParameters)
             if (CheckCloseButtons(Input))
             {
                 changeGateState_and_Mode(CLOSING, MODE_AUTO);
-                vTaskDelay(pdMS_TO_TICKS(200));
+                vTaskDelay(pdMS_TO_TICKS(100));
             }
             break;
 
@@ -98,13 +117,13 @@ void vGateTask(void *pvParameters)
 
             {
                 changeGateState_and_Mode(OPENING, MODE_AUTO);
-                vTaskDelay(pdMS_TO_TICKS(200));
+                vTaskDelay(pdMS_TO_TICKS(100));
             }
             break;
 
         case OPENING:
 
-            if (Input.openLimit)
+            if (xSemaphoreTake(xOpenLimitSemaphore, 0) == pdPASS)
             {
                 changeGateState_and_Mode(IDLE_OPEN, MODE_AUTO);
             }
@@ -115,22 +134,24 @@ void vGateTask(void *pvParameters)
             else if (Input.securityClose && (!Input.securityOpen))
             {
                 changeGateState_and_Mode(CLOSING, MODE_AUTO);
-                vTaskDelay(pdMS_TO_TICKS(200));
             }
             else if (currentMode == MODE_AUTO && CheckOpenButtons(Input))
             {
-                changeGateState_and_Mode(OPENING, MODE_MANUAL);
+                xQueueReceive(xInputQueue, &Input, portMAX_DELAY);
+                if (currentMode == MODE_AUTO && CheckOpenButtons(Input))
+                {
+                    changeGateState_and_Mode(OPENING, MODE_MANUAL);
+                }
             }
             else if (currentMode == MODE_MANUAL && !CheckOpenButtons(Input))
             {
                 changeGateState_and_Mode(STOPPED_MIDWAY, MODE_AUTO);
             }
-
             break;
 
         case CLOSING:
 
-            if (Input.closedLimit)
+            if (xSemaphoreTake(xCloseLimitSemaphore, 0) == pdPASS)
             {
                 changeGateState_and_Mode(IDLE_CLOSED, MODE_AUTO);
             }
@@ -141,11 +162,14 @@ void vGateTask(void *pvParameters)
             else if (Input.securityOpen && (!Input.securityClose))
             {
                 changeGateState_and_Mode(OPENING, MODE_AUTO);
-                vTaskDelay(pdMS_TO_TICKS(200));
             }
             else if (currentMode == MODE_AUTO && CheckCloseButtons(Input))
             {
-                changeGateState_and_Mode(CLOSING, MODE_MANUAL);
+                xQueueReceive(xInputQueue, &Input, portMAX_DELAY);
+                if (currentMode == MODE_AUTO && CheckCloseButtons(Input))
+                {
+                    changeGateState_and_Mode(CLOSING, MODE_MANUAL);
+                }
             }
             else if (currentMode == MODE_MANUAL && !CheckCloseButtons(Input))
             {
@@ -157,13 +181,11 @@ void vGateTask(void *pvParameters)
             if (CheckOpenButtons(Input))
             {
                 changeGateState_and_Mode(OPENING, MODE_AUTO);
-                vTaskDelay(pdMS_TO_TICKS(500));
             }
 
             if (CheckCloseButtons(Input))
             {
                 changeGateState_and_Mode(CLOSING, MODE_AUTO);
-                vTaskDelay(pdMS_TO_TICKS(500));
             }
             break;
 
@@ -172,6 +194,7 @@ void vGateTask(void *pvParameters)
             changeGateState_and_Mode(STOPPED_MIDWAY, MODE_AUTO);
             break;
         }
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -182,19 +205,22 @@ void vSafetyTask(void *pvParameters)
     GateMode_t currentMode;
     while (1)
     {
-        xSemaphoreTake(xObstacleSemaphore, portMAX_DELAY);
-
-        xSemaphoreTake(xGateStateMutex, portMAX_DELAY);
-
-        currentState = g_gateState;
-        currentMode = g_gateMode;
-
-        xSemaphoreGive(xGateStateMutex);
-
-        if (currentState == CLOSING)
+        if (xSemaphoreTake(xObstacleSemaphore, portMAX_DELAY) == pdPASS)
         {
-            // sent to the Gate_ControlTask
-            changeGateState_and_Mode(REVERSING, MODE_AUTO);
+            xSemaphoreTake(xGateStateMutex, portMAX_DELAY);
+
+            currentState = g_gateState;
+            currentMode = g_gateMode;
+
+            xSemaphoreGive(xGateStateMutex);
+
+            if (currentState == CLOSING)
+            {
+                // sent to the Gate_ControlTask
+                changeGateState_and_Mode(REVERSING, MODE_AUTO);
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(50));
         }
     }
 }
@@ -296,12 +322,14 @@ int main(void)
     xInputQueue = xQueueCreate(10, sizeof(InputData_t));
     xGateStateMutex = xSemaphoreCreateMutex();
     xObstacleSemaphore = xSemaphoreCreateBinary();
+    xOpenLimitSemaphore = xSemaphoreCreateBinary();
+    xCloseLimitSemaphore = xSemaphoreCreateBinary();
 
-    xTaskCreate(vSafetyTask, "Safety Task", 128, NULL, 4, NULL);
-    xTaskCreate(vInputTask, "Input Task", 128, NULL, 3, NULL);
+    xTaskCreate(vSafetyTask, "Safety Task", 256, NULL, 4, NULL);
+    xTaskCreate(vInputTask, "Input Task", 256, NULL, 3, NULL);
     xTaskCreate(vGateTask, "Gate Task", 512, NULL, 2, NULL);
-    xTaskCreate(vLEDTask, "LED Task", 128, NULL, 2, NULL);
-    xTaskCreate(vStatusTask, "Status Task", 128, NULL, 1, NULL);
+    xTaskCreate(vLEDTask, "LED Task", 256, NULL, 2, NULL);
+    xTaskCreate(vStatusTask, "Status Task", 256, NULL, 1, NULL);
 
     vTaskStartScheduler();
 }

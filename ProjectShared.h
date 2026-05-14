@@ -6,7 +6,8 @@
 #include "queue.h"
 #include "semphr.h"
 
-typedef enum {
+typedef enum
+{
     IDLE_OPEN,
     IDLE_CLOSED,
     OPENING,
@@ -15,12 +16,14 @@ typedef enum {
     REVERSING
 } GateState_t;
 
-typedef enum {
+typedef enum
+{
     MODE_MANUAL,
     MODE_AUTO
 } GateMode_t;
 
-typedef struct {      // push buttons inputs
+typedef struct
+{ // push buttons inputs
     uint8_t driverOpen;
     uint8_t driverClose;
     uint8_t securityOpen;
@@ -33,7 +36,6 @@ typedef struct {      // push buttons inputs
 extern QueueHandle_t xInputQueue; // from input task to safty task and gate control
 extern SemaphoreHandle_t xGateStateMutex;
 extern SemaphoreHandle_t xObstacleSemaphore;
-
 
 extern volatile GateState_t g_gateState;
 extern volatile GateMode_t g_gateMode;
